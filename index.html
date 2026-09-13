@@ -31,6 +31,11 @@
   .pill:hover { background: var(--ink); color: var(--paper); }
   #share { top: 18px; left: 18px; display: none; }
   #clear { top: 58px; left: 18px; display: none; }
+  #tunename { position: absolute; top: 152px; left: 20px; display: none; pointer-events: auto; width: 168px;
+    background: transparent; border: none; border-bottom: 1px solid rgba(53,48,42,0.3); color: var(--ink);
+    font-family: inherit; font-size: 13px; font-style: italic; letter-spacing: 0.08em; padding: 6px 2px; outline: none; }
+  #tunename::placeholder { opacity: 0.45; }
+  body.night #tunename { border-bottom-color: rgba(240,233,216,0.3); }
   #mute { top: 18px; right: 18px; width: 40px; height: 40px; padding: 0; font-size: 16px; }
   #echoBtn { left: 50%; bottom: 4.5%; transform: translateX(-50%); border-color: rgba(195,39,43,0.55); color: var(--shu); }
   #echoBtn:hover { background: var(--shu); color: var(--paper); }
@@ -62,6 +67,7 @@
   <div id="seal">福</div>
   <button id="share" class="pill">share your tune</button>
   <button id="clear" class="pill">start over</button>
+  <input id="tunename" maxlength="28" placeholder="name this tune" autocomplete="off" spellcheck="false">
   <button id="mute" class="pill" title="mute">音</button>
   <button id="echoBtn" class="pill">echo game<span class="jp">まねっこ</span></button>
   <button id="nightBtn" class="pill">night<span class="jp">夜</span></button>
@@ -494,7 +500,7 @@ function renderShareCard() {
   g.font = "600 17px " + MINCHO;
   g.fillText('L U C K Y   B E L L S', 562, 174);
   g.font = "italic 19px Georgia, serif";
-  g.fillText('my lucky tune', 560, 226);
+  g.fillText(tuneName ? '\u300C' + tuneName + '\u300D' : 'my lucky tune', 560, 226);
   // tune grid: 5 pitch rows x 64 steps
   const gx = 560, gy = 258, gw = 560, gh = 150;
   g.strokeStyle = N ? 'rgba(240,233,216,0.2)' : 'rgba(53,48,42,0.18)'; g.lineWidth = 1;
@@ -561,7 +567,7 @@ function renderShareCard() {
 
 function shareTune() {
   const url = location.origin + location.pathname + '#t=' + encodeTune();
-  const caption = 'my lucky tune: ' + url;
+  const caption = (tuneName ? tuneName + ' - ' : '') + 'my lucky tune: ' + url;
   let cv = null;
   try { cv = renderShareCard(); } catch (e) {}
   const finish = () => {
@@ -598,6 +604,15 @@ function decodeTune(s) {
   return m[1].split('-').map(p => { const [sid, step] = p.split('.').map(Number); return { sid, step }; });
 }
 const shareBtn = document.getElementById('share');
+const nameEl = document.getElementById('tunename');
+let tuneName = '';
+try { tuneName = localStorage.getItem('lb_tunename') || ''; } catch (e) {}
+nameEl.value = tuneName;
+nameEl.addEventListener('input', () => {
+  tuneName = nameEl.value.trim().slice(0, 28);
+  try { localStorage.setItem('lb_tunename', tuneName); } catch (e) {}
+});
+nameEl.addEventListener('pointerdown', e => e.stopPropagation());
 const clearBtn = document.getElementById('clear');
 clearBtn.addEventListener('click', e => {
   e.stopPropagation();
@@ -728,6 +743,7 @@ function updateStatus() {
   }
   shareBtn.style.display = events.length && !echo ? 'block' : 'none';
   clearBtn.style.display = (events.length || loopStart !== null) && !echo ? 'block' : 'none';
+  nameEl.style.display = events.length && !echo ? 'block' : 'none';
 }
 
 // ---------------- leaves (momiji, unlock at echo best 5) ----------------
