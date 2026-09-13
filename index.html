@@ -711,6 +711,7 @@ function tap(sid, px, py) {
     lastHarmony = T; harmonyCount++;
     try { localStorage.setItem('lb_harmonies', String(harmonyCount)); } catch (e) {}
     notes.push({ x: px, y: py - 34, vy: -26, a: 1.35, ch: '\u548C', s: 2.4, gold: true });
+    furinGlow = 1.6;
     headBob = 1.6; mewT = T;
     if (AC) { const pt = AC.currentTime;
       [58.27, 55].forEach((f, i) => { const o = AC.createOscillator(), og = AC.createGain();
@@ -923,11 +924,46 @@ function drawLeaf(l, dt) {
   ctx.globalAlpha = 1;
 }
 
+// ---------------- furin (rings on harmony) ----------------
+let furinGlow = 0;
+function drawFurin(t) {
+  const sway = Math.sin(t * 0.7) * 0.06 + furinGlow * Math.sin(t * 6) * 0.08;
+  const bx = W * 0.36, by = 64;
+  ctx.strokeStyle = P('line'); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(W * 0.36, 0); ctx.lineTo(bx + sway * 46, by); ctx.stroke();
+  ctx.save();
+  ctx.translate(bx + sway * 46, by); ctx.rotate(sway);
+  if (furinGlow > 0) {
+    const fg = ctx.createRadialGradient(0, 10, 2, 0, 10, 44);
+    fg.addColorStop(0, 'rgba(212,175,55,' + (0.4 * Math.min(1, furinGlow)) + ')');
+    fg.addColorStop(1, 'rgba(212,175,55,0)');
+    ctx.fillStyle = fg; ctx.fillRect(-44, -34, 88, 88);
+  }
+  // glass dome
+  ctx.fillStyle = night ? 'rgba(207,232,239,0.16)' : 'rgba(207,232,239,0.4)';
+  ctx.strokeStyle = P('line2'); ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.arc(0, 10, 15, Math.PI, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle = '#c9a227'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(0, 10, 15, Math.PI * 1.08, Math.PI * 1.92); ctx.stroke();
+  // clapper + tanzaku strip
+  ctx.fillStyle = P('ink');
+  ctx.beginPath(); ctx.arc(0, 22, 2.4, 0, 6.29); ctx.fill();
+  ctx.fillStyle = night ? '#e8e2d2' : '#f7f2e7';
+  ctx.strokeStyle = P('line'); ctx.lineWidth = 1;
+  ctx.fillRect(-4.5, 24, 9, 26); ctx.strokeRect(-4.5, 24, 9, 26);
+  ctx.fillStyle = '#c3272b';
+  ctx.font = "9px 'Hiragino Mincho ProN', YuMincho, serif";
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('\u798F', 0, 38);
+  ctx.restore();
+}
+
 // ---------------- main loop ----------------
 let T = 0, last = 0, leafT = 0;
 function tick(ts) {
   requestAnimationFrame(tick);
   const dt = Math.min(0.05, (ts - last) / 1000 || 0.016);
+  furinGlow = Math.max(0, furinGlow - dt);
   last = ts; T = ts / 1000;
   playbackTick();
   // attract mode: untouched and silent for a while - the cat hums a phrase
@@ -952,6 +988,7 @@ function tick(ts) {
 
   drawEnso();
   drawLanterns(T);
+  drawFurin(T);
 
   // cushion
   ctx.fillStyle = '#a41f23';
