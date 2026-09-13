@@ -115,6 +115,10 @@ function applyNight() { document.body.classList.toggle('night', night); }
 
 // seasons (auto by month, ?season= overrides) - coin glyphs follow the shrine calendar
 const LB_SEASONS = { snow: '\u96EA', sakura: '\u685C', firefly: '\u86CD', momiji: '\u6953', rain: '\u96E8' };
+const LEAF_COLS = {
+  momiji: ['#c3272b', '#d4763a'], sakura: ['#f2c4ce', '#e8a8b8'], snow: ['#f5f1e8', '#dde3e8'],
+  firefly: ['#cfe86a', '#9fb84a'], rain: ['#9ab2c8', '#6f8aa0'],
+};
 const _lbm = new Date().getMonth();
 let LB_SEASON = _lbm <= 1 || _lbm === 11 ? 'snow' : _lbm <= 4 ? 'sakura' : _lbm <= 7 ? 'firefly' : 'momiji';
 const _lbs = new URLSearchParams(location.search).get('season');
@@ -520,6 +524,11 @@ function renderShareCard() {
   g.font = '15px Menlo, monospace';
   const code = encodeTune();
   g.fillText(code.length > 58 ? code.slice(0, 55) + '...' : code, 560, 478);
+  if (best > 0) {
+    g.textAlign = 'right'; g.fillStyle = softC; g.font = '15px Menlo, monospace';
+    g.fillText('echo best \u00B7 ' + best, 1120, 478);
+    g.textAlign = 'left';
+  }
   g.fillStyle = inkC;
   g.font = "600 21px " + MINCHO;
   g.fillText('jacobegarcia.github.io/lucky-bells', 560, 530);
@@ -753,7 +762,7 @@ function spawnLeaf(burst) {
     y: burst ? cat.y - U(2.5) : -20 - Math.random() * H * 0.3,
     vy: 26 + Math.random() * 22, sway: Math.random() * 6.28, rs: (Math.random() - 0.5) * 2.4,
     rot: Math.random() * 6.28, s: 7 + Math.random() * 6,
-    col: Math.random() < 0.5 ? '#c3272b' : '#d4763a', a: burst ? 1 : 0.55 + Math.random() * 0.3
+    col: LEAF_COLS[LB_SEASON][Math.random() < 0.5 ? 0 : 1], a: burst ? 1 : 0.55 + Math.random() * 0.3
   });
 }
 
