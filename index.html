@@ -788,6 +788,16 @@ function drawEnso() {
   const cx = cat.x, cy = cat.y - U(1.45), R = U(2.55);
   ctx.fillStyle = P('enso');
   ctx.fill(ensoPath(cx, cy, R, U(0.09), -2.2, 5.9));
+  // harmonies found, ever: small vermilion beads along the inner lower arc
+  if (harmonyCount > 0) {
+    ctx.fillStyle = '#c3272b';
+    for (let i = 0; i < Math.min(harmonyCount, 10); i++) {
+      const a = Math.PI - 0.55 + i * 0.11;
+      ctx.beginPath();
+      ctx.arc(cx + Math.cos(a) * (R - U(0.34)), cy + Math.sin(a) * (R - U(0.34)), Math.max(2, U(0.05)), 0, 6.29);
+      ctx.fill();
+    }
+  }
   // echo run: one gold mark per level climbed, set along the ring
   if (echo && echo.level > 1) {
     ctx.save();
