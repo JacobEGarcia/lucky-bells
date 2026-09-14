@@ -721,8 +721,16 @@ function renderShareCard() {
   for (const e of events) {
     const ex = gx + (e.step / 63) * gw;
     const ey = gy + (rowOf(e.sid) / 4) * gh;
+    const er = e.sid <= 4 ? 7 : 5.5;
     g.fillStyle = colOf(e.sid);
-    g.beginPath(); g.arc(ex, ey, e.sid <= 4 ? 7 : 5.5, 0, 6.29); g.fill();
+    g.beginPath(); g.arc(ex, ey, er, 0, 6.29); g.fill();
+    if (LB_SEASON === 'snow') {
+      // frost rim: a thin cold ring, gathering brighter on the upper-left shoulder
+      g.strokeStyle = 'rgba(250,250,248,0.5)'; g.lineWidth = 1.1;
+      g.beginPath(); g.arc(ex, ey, er + 0.9, 0, 6.29); g.stroke();
+      g.strokeStyle = 'rgba(250,250,248,0.95)'; g.lineWidth = 2.1;
+      g.beginPath(); g.arc(ex, ey, er + 0.9, Math.PI * 0.7, Math.PI * 1.55); g.stroke();
+    }
   }
   // code + url
   g.fillStyle = softC;
