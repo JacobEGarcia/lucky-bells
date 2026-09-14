@@ -697,6 +697,59 @@ function renderShareCard() {
   const tg = '\u62DB\u304D\u732B\u306E\u97F3\u3042\u305D\u3073';
   for (let i = 0; i < tg.length; i++) g.fillText(tg[i], 1128, 120 + i * 30);
   g.restore();
+  // v51: winter collector's seal - in snow season a second hanko is pressed onto the card,
+  // with the rock of a real stamp: uneven ink, grain poking through, a rim that bleeds
+  if (LB_SEASON === 'snow') {
+    const S = 120;
+    const sc = document.createElement('canvas'); sc.width = S; sc.height = S;
+    const s2 = sc.getContext('2d');
+    let sd = 41;
+    const rnd = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+    const R0 = 52;
+    s2.fillStyle = '#c3272b';
+    s2.beginPath();
+    if (s2.roundRect) s2.roundRect(60 - R0, 60 - R0, R0 * 2, R0 * 2, 8); else s2.rect(60 - R0, 60 - R0, R0 * 2, R0 * 2);
+    s2.fill();
+    // ink gathers heavier at the rim where the stone bit down
+    s2.globalCompositeOperation = 'source-atop';
+    const bleed = s2.createRadialGradient(60, 60, 8, 60, 60, 64);
+    bleed.addColorStop(0, 'rgba(122,16,20,0.30)');
+    bleed.addColorStop(0.72, 'rgba(140,20,24,0.10)');
+    bleed.addColorStop(1, 'rgba(88,10,14,0.55)');
+    s2.fillStyle = bleed; s2.fillRect(0, 0, S, S);
+    // the rim leaks a little past the edge
+    s2.globalCompositeOperation = 'source-over';
+    s2.fillStyle = '#c3272b';
+    for (let i = 0; i < 16; i++) {
+      const ang = rnd() * Math.PI * 2;
+      const rr = R0 - 2 + rnd() * 4;
+      s2.globalAlpha = 0.25 + rnd() * 0.4;
+      s2.beginPath(); s2.arc(60 + Math.cos(ang) * rr, 60 + Math.sin(ang) * rr, 1 + rnd() * 2.2, 0, 6.29); s2.fill();
+    }
+    s2.globalAlpha = 1;
+    // white-character seal: the yuki mark cut in cream
+    s2.fillStyle = '#f7f2e7';
+    s2.font = "56px " + MINCHO;
+    s2.textAlign = 'center'; s2.textBaseline = 'middle';
+    s2.fillText('\u96EA', 60, 63);
+    // where the press was light the paper shows through - flecks lifted out of the ink
+    s2.globalCompositeOperation = 'destination-out';
+    for (let i = 0; i < 46; i++) {
+      s2.globalAlpha = 0.10 + rnd() * 0.30;
+      s2.beginPath(); s2.arc(60 + (rnd() * 2 - 1) * R0, 60 + (rnd() * 2 - 1) * R0, 0.6 + rnd() * 2.0, 0, 6.29); s2.fill();
+    }
+    for (let i = 0; i < 7; i++) {
+      const ang = rnd() * Math.PI * 2;
+      s2.globalAlpha = 0.35 + rnd() * 0.3;
+      s2.beginPath(); s2.arc(60 + Math.cos(ang) * (R0 - 1), 60 + Math.sin(ang) * (R0 - 1), 1.5 + rnd() * 2.5, 0, 6.29); s2.fill();
+    }
+    s2.globalAlpha = 1; s2.globalCompositeOperation = 'source-over';
+    // pressed at a slight rock, tucked into the open corner opposite the fuku seal
+    g.save();
+    g.translate(92, ch - 82); g.rotate(0.062);
+    g.drawImage(sc, -60, -60);
+    g.restore();
+  }
   // hanko, half off the frame corner
   g.save();
   g.translate(cw - 78, ch - 78); g.rotate(-0.035);
