@@ -685,7 +685,9 @@ function renderShareCard() {
   const MINCHO = "'Hiragino Mincho ProN','Hiragino Mincho Pro',YuMincho,'Yu Mincho','Noto Serif CJK JP','Noto Serif JP',serif";
   // paper
   const bg = g.createLinearGradient(0, 0, 0, ch);
-  bg.addColorStop(0, N ? '#221c15' : '#f9f5ec'); bg.addColorStop(1, N ? '#0f0c09' : '#efe7d4');
+  // v60: snow season cools the night paper - a moonlit slate instead of warm lacquer brown
+  if (N && LB_SEASON === 'snow') { bg.addColorStop(0, '#1d2029'); bg.addColorStop(1, '#0c0e15'); }
+  else { bg.addColorStop(0, N ? '#221c15' : '#f9f5ec'); bg.addColorStop(1, N ? '#0f0c09' : '#efe7d4'); }
   g.fillStyle = bg; g.fillRect(0, 0, cw, ch);
   g.fillStyle = g.createPattern(grain, 'repeat'); g.fillRect(0, 0, cw, ch);
   // gold hairline frame
