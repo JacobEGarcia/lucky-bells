@@ -119,6 +119,8 @@ function applyNight() { document.body.classList.toggle('night', night); }
 const LB_SEASONS = { snow: '\u96EA', sakura: '\u685C', firefly: '\u86CD', momiji: '\u6953', rain: '\u96E8' };
 const LANTERN_GLOW = { snow: '200,220,255', sakura: '255,190,205', firefly: '212,236,150', momiji: '255,190,120', rain: '170,190,215' };
 const COIN_RIM = { snow: '#7a94b8', sakura: '#c97b8a', firefly: '#7a9a4a', momiji: '#b8562a', rain: '#5a7a8a' };
+// v48: the ground's answer carries the season, always quieter than the gold tap feedback
+const ANSWER_COL = { sakura: '#e0aebf', snow: '#dceaf2', firefly: '#cfe0a0', momiji: '#d89548', rain: '#aec6d8' };
 const ENSO_TINT = {
   snow:    ['rgba(120,148,184,0.13)', 'rgba(170,195,225,0.13)'],
   sakura:  ['rgba(201,123,138,0.12)', 'rgba(235,170,185,0.12)'],
@@ -1213,7 +1215,7 @@ function tick(ts) {
     r.r += dt * (r.w ? 130 : 220); r.a -= dt * (r.w ? 0.85 : 2.4);
     if (r.a <= 0) { ripples.splice(i, 1); continue; }
     ctx.globalAlpha = r.a;
-    ctx.strokeStyle = r.w ? '#aec6d8' : '#b98a1c'; ctx.lineWidth = 2;
+    ctx.strokeStyle = r.w ? (ANSWER_COL[LB_SEASON] || '#aec6d8') : '#b98a1c'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(r.x, r.y, r.r, 0, 6.29); ctx.stroke();
     ctx.globalAlpha = 1;
   }
