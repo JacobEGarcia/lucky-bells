@@ -192,7 +192,7 @@ if (dayN > 0) {
 }
 
 // ---------------- audio ----------------
-let AC = null, master = null, wet = null, muted = false, rainNodes = null, warmLp = null, wobGain = null;
+let AC = null, master = null, wet = null, muted = false, rainNodes = null, warmLp = null, wobGain = null, frostHs = null, frostHp = null;
 function audio() {
   if (AC) return AC;
   AC = new (window.AudioContext || window.webkitAudioContext)();
@@ -202,7 +202,9 @@ function audio() {
   comp.attack.value = 0.004; comp.release.value = 0.24;
   // v49: tape-in-the-rain - warmth filter + slow pitch wobble, both idle unless rain-night
   warmLp = AC.createBiquadFilter(); warmLp.type = 'lowpass'; warmLp.frequency.value = 19000; warmLp.Q.value = 0.3;
-  master.connect(warmLp); warmLp.connect(comp); comp.connect(AC.destination);
+  frostHs = AC.createBiquadFilter(); frostHs.type = 'highshelf'; frostHs.frequency.value = 6200; frostHs.gain.value = 0;
+  frostHp = AC.createBiquadFilter(); frostHp.type = 'highpass'; frostHp.frequency.value = 40; frostHp.Q.value = 0.5;
+  master.connect(warmLp); warmLp.connect(frostHs); frostHs.connect(frostHp); frostHp.connect(comp); comp.connect(AC.destination);
   const wob = AC.createOscillator(); wob.frequency.value = 4.3;
   wobGain = AC.createGain(); wobGain.gain.value = 0;
   wob.connect(wobGain); wob.start();
@@ -324,14 +326,23 @@ const DRIFT_PH2 = 1.3;
 // v50: the drift engages in seconds at nightfall but releases over a slow dawn window -
 // the loop wakes up dry gradually, like the shrine pools cooling at first light
 let tapeEase = 0;
-function applyTape(e) {
-  DRIFT_A1 = 0.012 + e * 0.008; DRIFT_P1 = 150 + e * 40;
-  DRIFT_A2 = 0.007 + e * 0.004; DRIFT_P2 = 97 + e * 34;
+// v53: first frost - snow nights run the same drift the other way: a touch faster, colder, tighter
+let frostEase = 0;
+function applyDrift() {
+  const e = tapeEase, f = frostEase;
+  DRIFT_A1 = 0.012 + e * 0.008 + f * 0.003; DRIFT_P1 = 150 + e * 40 - f * 55;
+  DRIFT_A2 = 0.007 + e * 0.004 + f * 0.002; DRIFT_P2 = 97 + e * 34 - f * 30;
   if (!AC) return;
   if (warmLp) warmLp.frequency.value = 19000 - e * 13800;
-  if (wobGain) wobGain.gain.value = e * 7;
+  if (frostHs) frostHs.gain.value = f * 4;
+  if (frostHp) frostHp.frequency.value = 40 + f * 100;
+  if (wobGain) wobGain.gain.value = e * 7 + f * 4;
 }
-function updateTapeDrift() { tapeEase = (night && LB_SEASON === 'rain') ? 1 : 0; applyTape(tapeEase); }
+function updateTapeDrift() {
+  tapeEase = (night && LB_SEASON === 'rain') ? 1 : 0;
+  frostEase = (night && LB_SEASON === 'snow') ? 1 : 0;
+  applyDrift();
+}
 function loopPhase() {
   if (loopStart === null || !AC) return 0;
   const el = AC.currentTime - loopStart;
@@ -1215,9 +1226,11 @@ function tick(ts) {
   playbackTick();
   thunderTick(dt);
   const tapeTarget = (night && LB_SEASON === 'rain') ? 1 : 0;
-  if (tapeEase !== tapeTarget) {
+  const frostTarget = (night && LB_SEASON === 'snow') ? 1 : 0;
+  if (tapeEase !== tapeTarget || frostEase !== frostTarget) {
     tapeEase += Math.sign(tapeTarget - tapeEase) * Math.min(Math.abs(tapeTarget - tapeEase), tapeTarget > tapeEase ? dt / 2.2 : dt / 90);
-    applyTape(tapeEase);
+    frostEase += Math.sign(frostTarget - frostEase) * Math.min(Math.abs(frostTarget - frostEase), frostTarget > frostEase ? dt / 2.2 : dt / 90);
+    applyDrift();
   }
   // v47: after a quiet breath, pale rings on the ground replay the rhythm you rang
   if (!echoAnswered && tapRhythm.length >= 3 && T - tapRhythm[tapRhythm.length - 1] > 4) {
@@ -1306,7 +1319,7 @@ requestAnimationFrame(tick);
 
 // ---------------- debug hooks ----------------
 window.__lb = () => ({ events: events.length, loopOn: loopStart !== null, phase: +loopPhase().toFixed(3), code: events.length ? encodeTune() : null, best, dayN, leavesOn, furin: +furinGlow.toFixed(2) });
-window.__lbTape = () => ({ on: night && LB_SEASON === 'rain', ease: +tapeEase.toFixed(3), wowA: +DRIFT_A1.toFixed(3), wowP: Math.round(DRIFT_P1), warmHz: warmLp ? Math.round(warmLp.frequency.value) : 0, wobCents: wobGain ? +wobGain.gain.value.toFixed(1) : 0 });
+window.__lbTape = () => ({ on: night && LB_SEASON === 'rain', ease: +tapeEase.toFixed(3), frost: night && LB_SEASON === 'snow', fease: +frostEase.toFixed(3), wowA: +DRIFT_A1.toFixed(3), wowP: Math.round(DRIFT_P1), warmHz: warmLp ? Math.round(warmLp.frequency.value) : 0, frostDb: frostHs ? +frostHs.gain.value.toFixed(1) : 0, frostHp: frostHp ? Math.round(frostHp.frequency.value) : 0, wobCents: wobGain ? +wobGain.gain.value.toFixed(1) : 0 });
 window.__lbEchoMem = () => ({ taps: tapRhythm.length, replayed: echoReplayed, rings: ripples.filter(r => r.w).length });
 window.__lbEcho = () => echo ? { phase: echo.phase, level: echo.level, idx: echo.idx, len: echo.seq.length } : null;
 window.__lbEchoWin = () => { if (echo && echo.phase === 'input') { echo.idx = echo.seq.length - 1; echoTap(echo.seq[echo.seq.length - 1]); } };
