@@ -51,8 +51,10 @@
     color: var(--ink-soft); font-size: clamp(12px, 1.7vw, 15px); letter-spacing: 0.2em; text-align: center; width: 92vw; }
   #best { position: absolute; left: 50%; bottom: 12.9%; transform: translateX(-50%);
     color: var(--gold); font-size: clamp(10px, 1.4vw, 12px); letter-spacing: 0.3em; text-align: center; display: none; }
-  #day { position: absolute; top: 18px; left: 50%; transform: translateX(-50%);
-    color: var(--ink-soft); font-size: 11px; letter-spacing: 0.3em; opacity: 0; transition: opacity 1s; }
+  #day { position: absolute; top: 18px; left: 50%; transform: translateX(-50%) rotate(-3deg);
+    background: var(--shu); color: #f7f2e7; font-size: 10px; letter-spacing: 0.16em;
+    padding: 4px 7px 3px 9px; border-radius: 4px; opacity: 0; transition: opacity 1s;
+    box-shadow: 0 1px 0 rgba(53,48,42,0.25); }
   #loopWrap { position: absolute; left: 50%; bottom: 8.5%; transform: translateX(-50%);
     width: min(300px, 60vw); height: 3px; border-radius: 2px; background: rgba(53,48,42,0.14); overflow: hidden; }
   #loopFill { height: 100%; width: 0%; background: var(--gold); }
@@ -115,6 +117,15 @@ function applyNight() { document.body.classList.toggle('night', night); }
 
 // seasons (auto by month, ?season= overrides) - coin glyphs follow the shrine calendar
 const LB_SEASONS = { snow: '\u96EA', sakura: '\u685C', firefly: '\u86CD', momiji: '\u6953', rain: '\u96E8' };
+const LANTERN_GLOW = { snow: '200,220,255', sakura: '255,190,205', firefly: '212,236,150', momiji: '255,190,120', rain: '170,190,215' };
+const COIN_RIM = { snow: '#7a94b8', sakura: '#c97b8a', firefly: '#7a9a4a', momiji: '#b8562a', rain: '#5a7a8a' };
+const ENSO_TINT = {
+  snow:    ['rgba(120,148,184,0.13)', 'rgba(170,195,225,0.13)'],
+  sakura:  ['rgba(201,123,138,0.12)', 'rgba(235,170,185,0.12)'],
+  firefly: ['rgba(122,154,74,0.12)',  'rgba(190,220,120,0.12)'],
+  momiji:  ['rgba(184,86,42,0.11)',   'rgba(220,130,80,0.11)'],
+  rain:    ['rgba(90,122,138,0.12)',  'rgba(140,170,190,0.12)'],
+};
 const LEAF_COLS = {
   momiji: ['#c3272b', '#d4763a'], sakura: ['#f2c4ce', '#e8a8b8'], snow: ['#f5f1e8', '#dde3e8'],
   firefly: ['#cfe86a', '#9fb84a'], rain: ['#9ab2c8', '#6f8aa0'],
@@ -174,12 +185,12 @@ try {
 } catch (e) {}
 if (dayN > 0) {
   const dEl = document.getElementById('day');
-  dEl.textContent = dayN + '日目 · day ' + dayN;
+  dEl.textContent = dayN + '日目'; dEl.title = 'day ' + dayN + ' of visiting';
   requestAnimationFrame(() => dEl.style.opacity = '0.8');
 }
 
 // ---------------- audio ----------------
-let AC = null, master = null, wet = null, muted = false;
+let AC = null, master = null, wet = null, muted = false, rainNodes = null;
 function audio() {
   if (AC) return AC;
   AC = new (window.AudioContext || window.webkitAudioContext)();
@@ -197,7 +208,39 @@ function audio() {
   const conv = AC.createConvolver(); conv.buffer = imp;
   wet = AC.createGain(); wet.gain.value = 0.22;
   wet.connect(conv); conv.connect(master);
+  updateRainAudio();
   return AC;
+}
+// rain at night: a soft pink-noise wash, breathing slowly under the bells
+function updateRainAudio() {
+  if (!AC) return;
+  const want = night && LB_SEASON === 'rain' && !muted;
+  if (want && !rainNodes) {
+    const len = Math.floor(AC.sampleRate * 2);
+    const buf = AC.createBuffer(2, len, AC.sampleRate);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = buf.getChannelData(ch);
+      let last = 0;
+      for (let i = 0; i < len; i++) { const w = Math.random() * 2 - 1; last = last * 0.94 + w * 0.06; d[i] = last * 3.2; }
+    }
+    const srcN = AC.createBufferSource(); srcN.buffer = buf; srcN.loop = true;
+    const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1500; lp.Q.value = 0.4;
+    const hp = AC.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 350;
+    const g = AC.createGain(); g.gain.setValueAtTime(0.0001, AC.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.05, AC.currentTime + 2.4);
+    const lfo = AC.createOscillator(); lfo.frequency.value = 0.13;
+    const lfoG = AC.createGain(); lfoG.gain.value = 0.012;
+    lfo.connect(lfoG); lfoG.connect(g.gain);
+    srcN.connect(hp); hp.connect(lp); lp.connect(g); g.connect(master);
+    srcN.start(); lfo.start();
+    rainNodes = { srcN, lfo, g };
+  } else if (!want && rainNodes) {
+    const rn = rainNodes; rainNodes = null;
+    rn.g.gain.cancelScheduledValues(AC.currentTime);
+    rn.g.gain.setValueAtTime(rn.g.gain.value, AC.currentTime);
+    rn.g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime + 1.2);
+    setTimeout(() => { try { rn.srcN.stop(); rn.lfo.stop(); } catch (e) {} }, 1400);
+  }
 }
 function out(node, wetAmt) {
   node.connect(master);
@@ -266,9 +309,15 @@ const LOOP_S = 9.6, STEPS = 64;
 let loopStart = null;
 let events = [];
 let lastStep = -1;
+// tape drift: over long sessions the loop breathes a little, like a well-loved cassette
+const DRIFT_A1 = 0.012, DRIFT_P1 = 150, DRIFT_A2 = 0.007, DRIFT_P2 = 97, DRIFT_PH2 = 1.3;
 function loopPhase() {
   if (loopStart === null || !AC) return 0;
-  return ((AC.currentTime - loopStart) / LOOP_S) % 1;
+  const el = AC.currentTime - loopStart;
+  const tw = el
+    + DRIFT_A1 * DRIFT_P1 / (2 * Math.PI) * (1 - Math.cos(2 * Math.PI * el / DRIFT_P1))
+    + DRIFT_A2 * DRIFT_P2 / (2 * Math.PI) * (Math.cos(DRIFT_PH2) - Math.cos(2 * Math.PI * el / DRIFT_P2 + DRIFT_PH2));
+  return (tw / LOOP_S) % 1;
 }
 function record(sid) {
   if (!AC) return;
@@ -293,6 +342,8 @@ let echoPlayed = false;
 let recentTaps = [], lastHarmony = -9, harmonyCount = 0;
 let lastInteract = 0, humUntil = 0;
 try { harmonyCount = +localStorage.getItem('lb_harmonies') || 0; } catch (e) {}
+let streak = 0, streakT = 0;
+try { streak = +localStorage.getItem('lb_streak') || 0; streakT = +localStorage.getItem('lb_streak_t') || 0; } catch (e) {}
 try { echoPlayed = localStorage.getItem('lb_echoPlayed') === '1'; } catch (e) {}
 if (!echoPlayed) echoBtn.classList.add('invite');
 function echoStart() {
@@ -304,9 +355,16 @@ function echoStart() {
   echoShow();
 }
 function echoStop() {
+  const abandoned = echo && echo.level > 1;
   echo = null;
   echoBtn.innerHTML = 'echo game<span class="jp">まねっこ</span>';
   updateStatus();
+  if (abandoned) {
+    notes.push({ x: cat.x, y: cat.y - U(2.4), vy: -18, a: 1.8, ch: '\u307E\u305F\u306D', s: 1.5 });
+    const st = document.getElementById('status');
+    st.textContent = 'the cat keeps the tune for you · \u307E\u305F\u306D';
+    setTimeout(() => updateStatus(), 3600);
+  }
 }
 function rnd5() { return Math.floor(Math.random() * 5); }
 function echoPick() {
@@ -331,6 +389,18 @@ function echoShow() {
   });
   setTimeout(() => { if (echo && echo.phase === 'show') { echo.phase = 'input'; updateStatus(); } }, 500 + echo.seq.length * gap + 200);
 }
+// the furin answers a solved echo: two glassy partials with a long ring
+function playFurinChime(vol) {
+  if (muted || !AC) return;
+  const t0 = AC.currentTime;
+  [3120, 4180].forEach((f, i) => {
+    const o = AC.createOscillator(), g = AC.createGain();
+    o.type = 'sine'; o.frequency.value = f * (0.98 + Math.random() * 0.04);
+    env(g, t0 + i * 0.09, (vol || 1) * (i ? 0.05 : 0.09), 2.2);
+    o.connect(g); out(g, 0.7);
+    o.start(t0 + i * 0.09); o.stop(t0 + i * 0.09 + 2.4);
+  });
+}
 function echoTap(sid) {
   if (!echo || echo.phase !== 'input') return false;
   if (sid === echo.seq[echo.idx]) {
@@ -340,10 +410,15 @@ function echoTap(sid) {
       echo.seq.push(echoPick());
       // little ascending celebration; every 5th level the lanterns get it too
       [0, 2, 4].forEach((n, i) => setTimeout(() => playCoin(PENTA[[0, 2, 4][i]], undefined, 0.5), 120 * i));
+      furinGlow = 1.8;
+      setTimeout(() => playFurinChime(1), 620);
       if ((echo.level - 1) % 5 === 0) {
         [0, 1, 2, 3].forEach(i => setTimeout(() => playBell(undefined, 0.8), 500 + i * 180));
         for (let i = 0; i < 8; i++) spawnLeaf(true);
       }
+      ripples.push({ x: cat.x, y: cat.y - U(1.2), r: U(0.6), a: 1 });
+      ripples.push({ x: cat.x, y: cat.y - U(1.2), r: U(0.3), a: 0.8 });
+      notes.push({ x: cat.x, y: cat.y - U(2.4), vy: -24, a: 1.5, ch: echo.level + '\u6BB5', s: 1.8, gold: true });
       setTimeout(() => echo && echoShow(), 950);
       echo.phase = 'show';
       updateStatus();
@@ -354,7 +429,9 @@ function echoTap(sid) {
   playCoin(98, undefined, 1.2); playMew(undefined, 0.8, true); mewT = T;
   echo.phase = 'over';
   const lv = echo.level;
+  let newBest = false;
   if (lv > best) {
+    newBest = lv > 1;
     best = lv;
     try { localStorage.setItem('lb_best', String(best)); } catch (e) {}
     if (best >= 5 && !leavesOn) {
@@ -364,12 +441,20 @@ function echoTap(sid) {
     }
   }
   updateStatus();
+  if (newBest) {
+    notes.push({ x: cat.x, y: cat.y - U(2.4), vy: -22, a: 1.6, ch: '\u65B0\u8A18\u9332', s: 1.7, gold: true });
+    ripples.push({ x: cat.x, y: cat.y - U(1.2), r: U(0.5), a: 0.9 });
+    const st = document.getElementById('status');
+    st.innerHTML = 'a new best - level ' + lv + ' · <span style="color:var(--gold)">\u65B0\u8A18\u9332</span>';
+    setTimeout(() => updateStatus(), 4200);
+  }
   return true;
 }
 document.getElementById('nightBtn').addEventListener('click', () => {
   night = !night;
   try { localStorage.setItem('lb_night', night ? 'on' : 'off'); } catch (e) {}
   applyNight(); genGrain(); grainPat = null;
+  updateRainAudio();
 });
 
 echoBtn.addEventListener('click', e => {
@@ -477,7 +562,7 @@ function renderShareCard() {
   g.strokeRect(26.5, 26.5, cw - 53, ch - 53);
   g.globalAlpha = 1;
   // enso + cat, left third
-  g.fillStyle = N ? 'rgba(240,233,216,0.10)' : 'rgba(53,48,42,0.09)';
+  g.fillStyle = (ENSO_TINT[LB_SEASON] || [N ? 'rgba(240,233,216,0.10)' : 'rgba(53,48,42,0.09)'])[N ? 1 : 0];
   g.fill(ensoPath(310, 330, 185, 14, -2.2, 5.9));
   // cushion
   g.fillStyle = '#c3272b';
@@ -503,6 +588,10 @@ function renderShareCard() {
   g.fillStyle = softC;
   g.font = "600 17px " + MINCHO;
   g.fillText('L U C K Y   B E L L S', 562, 174);
+  const wmW = g.measureText('L U C K Y   B E L L S').width;
+  g.globalAlpha = 0.75;
+  g.fillText('\u00B7 ' + LB_SEASON + ' ' + (LB_SEASONS[LB_SEASON] || ''), 562 + wmW + 16, 174);
+  g.globalAlpha = 1;
   g.font = "italic 19px Georgia, serif";
   g.fillText(tuneName ? '\u300C' + tuneName + '\u300D' : 'my lucky tune', 560, 226);
   // tune grid: 5 pitch rows x 64 steps
@@ -525,6 +614,17 @@ function renderShareCard() {
   const code = encodeTune();
   g.fillText(code.length > 58 ? code.slice(0, 55) + '...' : code, 560, 478);
   if (best > 0) {
+    const medals = Math.min(best, 8);
+    for (let i = 0; i < medals; i++) {
+      const mx = 1120 - (medals - 1 - i) * 26, my = 444;
+      g.fillStyle = '#b98a1c';
+      g.beginPath(); g.arc(mx, my, 9, 0, 6.29); g.fill();
+      g.fillStyle = N ? '#221c15' : '#f9f5ec';
+      g.font = '600 11px Menlo, monospace'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText(String(i + 1), mx, my + 0.5);
+    }
+    g.textBaseline = 'alphabetic';
+    if (best > 8) { g.textAlign = 'left'; g.fillStyle = softC; g.font = '15px Menlo, monospace'; g.fillText('+', 1126, 450); }
     g.textAlign = 'right'; g.fillStyle = softC; g.font = '15px Menlo, monospace';
     g.fillText('echo best \u00B7 ' + best, 1120, 478);
     g.textAlign = 'left';
@@ -538,7 +638,7 @@ function renderShareCard() {
   // harmony seal: vermilion stamp when the player has found a harmony
   if (harmonyCount > 0) {
     g.save();
-    g.translate(1046, 190);
+    g.translate(1004, 190);
     g.fillStyle = '#c3272b';
     g.beginPath();
     const rr = (x, y, w, h, r) => { g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); };
@@ -549,7 +649,25 @@ function renderShareCard() {
     g.textBaseline = 'alphabetic';
     g.fillStyle = softC; g.font = '11px Menlo, monospace'; g.globalAlpha = 0.85;
     g.fillText(harmonyCount + (harmonyCount === 1 ? ' HARMONY' : ' HARMONIES'), 0, 52);
+    if (streak > 1) { g.globalAlpha = 0.6; g.fillText('STREAK ' + streak, 0, 68); g.globalAlpha = 0.85; }
     g.restore();
+  }
+  // on a real streak, the shrine calls: small torii + an invitation under the cat
+  if (streak >= 3) {
+    g.save();
+    g.translate(310, 552);
+    g.strokeStyle = '#c3272b'; g.lineCap = 'round';
+    g.lineWidth = 3.2;
+    g.beginPath(); g.moveTo(-27, -17); g.quadraticCurveTo(0, -24, 27, -17); g.stroke();
+    g.lineWidth = 2.4;
+    g.beginPath(); g.moveTo(-20, -7); g.lineTo(20, -7); g.stroke();
+    g.beginPath(); g.moveTo(-14, -14); g.lineTo(-14, 13); g.moveTo(14, -14); g.lineTo(14, 13); g.stroke();
+    g.restore();
+    g.textAlign = 'center';
+    g.fillStyle = '#b98a1c';
+    g.font = "600 18px " + MINCHO;
+    g.fillText('the shrine is listening \u00B7 \u795E\u793E\u304C\u5F85\u3063\u3066\u3044\u308B', 310, 592);
+    g.textAlign = 'left';
   }
   // tategaki, right edge inside frame
   g.save();
@@ -614,6 +732,8 @@ function decodeTune(s) {
 }
 const shareBtn = document.getElementById('share');
 const nameEl = document.getElementById('tunename');
+const TUNE_PLACEHOLDERS = { snow: 'first snow lullaby', sakura: 'petals on the water', firefly: 'lantern-light waltz', momiji: 'crimson leaf song', rain: 'rain on the eaves' };
+nameEl.placeholder = TUNE_PLACEHOLDERS[LB_SEASON] || 'name this tune';
 let tuneName = '';
 try { tuneName = localStorage.getItem('lb_tunename') || ''; } catch (e) {}
 nameEl.value = tuneName;
@@ -639,6 +759,19 @@ if (shared && shared.length) {
   document.getElementById('status').textContent = 'a shared tune is loaded - tap to hear it';
   shareBtn.style.display = 'block';
 }
+updateStatus();
+// first visit: the bells say hello
+try {
+  const st0 = document.getElementById('status');
+  if (!localStorage.getItem('lb_seen')) {
+    localStorage.setItem('lb_seen', '1');
+    st0.textContent = 'you found the bells. they were listening for you · \u3088\u3046\u3053\u305D';
+    setTimeout(() => updateStatus(), 5200);
+  } else if (dayN > 1) {
+    st0.textContent = 'the bells remembered you · \u304A\u304B\u3048\u308A';
+    setTimeout(() => updateStatus(), 4200);
+  }
+} catch (e) {}
 
 // ---------------- layout ----------------
 function layout() {
@@ -709,8 +842,20 @@ function tap(sid, px, py) {
   recentTaps = recentTaps.filter(r => T - r.t < 0.9); recentTaps.push({ sid, t: T });
   if (new Set(recentTaps.map(r => r.sid)).size >= 3 && T - lastHarmony > 4) {
     lastHarmony = T; harmonyCount++;
+    { const nw = Date.now() / 1000;
+      streak = (nw - streakT < 20) ? streak + 1 : 1; streakT = nw;
+      try { localStorage.setItem('lb_streak', String(streak)); localStorage.setItem('lb_streak_t', String(streakT)); } catch (e) {} }
     try { localStorage.setItem('lb_harmonies', String(harmonyCount)); } catch (e) {}
-    notes.push({ x: px, y: py - 34, vy: -26, a: 1.35, ch: '\u548C', s: 2.4, gold: true });
+    if (harmonyCount === 10) {
+      notes.push({ x: cat.x, y: cat.y - U(3.1), vy: -14, a: 2.6, ch: '\u5341\u306E\u548C', s: 2.2, gold: true });
+      ripples.push({ x: cat.x, y: cat.y, r: U(0.8), a: 0.9 });
+      ripples.push({ x: cat.x, y: cat.y, r: U(0.35), a: 0.7 });
+      headBob = 2.2; mewT = T;
+      const stm = document.getElementById('status');
+      stm.textContent = 'ten harmonies - the bells know your song now \u00B7 \u5341\u306E\u548C';
+      setTimeout(() => updateStatus(), 4800);
+    }
+    notes.push({ x: px, y: py - 34, vy: -26, a: 1.35, ch: streak > 1 ? '\u548C\u00D7' + streak : '\u548C', s: 2.4, gold: true });
     furinGlow = 1.6;
     headBob = 1.6; mewT = T;
     if (AC) { const pt = AC.currentTime;
@@ -738,18 +883,14 @@ function triggerVisual(sid, vol) {
 // ---------------- status ----------------
 function updateStatus() {
   const st = document.getElementById('status');
-  const bEl = document.getElementById('best');
+  const bTxt = best ? ' <span style="color:var(--gold)">· best ' + best + '</span>' : '';
   if (echo) {
-    if (echo.phase === 'show') st.textContent = 'listen… 聞いて';
-    else if (echo.phase === 'input') st.textContent = 'your turn · ' + echo.idx + ' / ' + echo.seq.length;
-    else st.textContent = 'level ' + echo.level + ' · tap echo to play once more';
-    bEl.style.display = best ? 'block' : 'none';
-    if (best) bEl.textContent = 'best ' + best;
+    if (echo.phase === 'show') st.innerHTML = 'listen… 聞いて';
+    else if (echo.phase === 'input') st.innerHTML = 'your turn · ' + echo.idx + ' / ' + echo.seq.length;
+    else st.innerHTML = 'level ' + echo.level + bTxt + ' · tap echo to play once more';
   } else {
-    if (loopStart === null) st.textContent = events.length ? 'a shared tune is loaded - tap to hear it' : 'tap something lucky';
-    else st.textContent = '\u25CF looping ' + events.length + ' note' + (events.length === 1 ? '' : 's') + ' \u00B7 keep tapping to overdub';
-    bEl.style.display = best ? 'block' : 'none';
-    if (best) bEl.textContent = 'echo best ' + best;
+    if (loopStart === null) st.innerHTML = (events.length ? 'a shared tune is loaded - tap to hear it' : 'tap something lucky') + bTxt;
+    else st.innerHTML = '\u25CF looping ' + events.length + ' note' + (events.length === 1 ? '' : 's') + ' \u00B7 keep tapping to overdub' + bTxt;
   }
   shareBtn.style.display = events.length && !echo ? 'block' : 'none';
   clearBtn.style.display = (events.length || loopStart !== null) && !echo ? 'block' : 'none';
@@ -785,17 +926,26 @@ function ensoPath(cx, cy, R, wBase, a0, sweep) {
   p.closePath();
   return p;
 }
-function drawEnso() {
+function drawEnso(t) {
   const cx = cat.x, cy = cat.y - U(1.45), R = U(2.55);
-  ctx.fillStyle = P('enso');
+  ctx.fillStyle = (ENSO_TINT[LB_SEASON] || [P('enso')])[night ? 1 : 0];
   ctx.fill(ensoPath(cx, cy, R, U(0.09), -2.2, 5.9));
   // harmonies found, ever: small vermilion beads along the inner lower arc
   if (harmonyCount > 0) {
+    const streakLive = streak > 1 && (Date.now() / 1000 - streakT) < 20;
     ctx.fillStyle = '#c3272b';
     for (let i = 0; i < Math.min(harmonyCount, 10); i++) {
       const a = Math.PI - 0.55 + i * 0.11;
+      const shimmer = streakLive ? 1 + 0.35 * Math.sin((t || 0) * 4 - i * 0.6) : 1;
+      const bx = cx + Math.cos(a) * (R - U(0.34)), by = cy + Math.sin(a) * (R - U(0.34));
+      if (streakLive) {
+        ctx.save(); ctx.globalAlpha = 0.3 + 0.2 * Math.sin((t || 0) * 4 - i * 0.6);
+        ctx.fillStyle = '#b98a1c';
+        ctx.beginPath(); ctx.arc(bx, by, Math.max(2, U(0.05)) * 2.1 * shimmer, 0, 6.29); ctx.fill();
+        ctx.restore(); ctx.fillStyle = '#c3272b';
+      }
       ctx.beginPath();
-      ctx.arc(cx + Math.cos(a) * (R - U(0.34)), cy + Math.sin(a) * (R - U(0.34)), Math.max(2, U(0.05)), 0, 6.29);
+      ctx.arc(bx, by, Math.max(2, U(0.05)) * shimmer, 0, 6.29);
       ctx.fill();
     }
   }
@@ -817,18 +967,28 @@ function drawEnso() {
 
 function drawLanterns(t) {
   for (const l of lanterns) {
-    const x = l.fx * W + Math.sin(t * 0.45 + l.ph) * 6;
+    const rain = LB_SEASON === 'rain';
+    const x = l.fx * W + Math.sin(t * (rain ? 0.95 : 0.45) + l.ph) * (rain ? 11 : 6);
     const y = l.fy * H;
     if (night) {
+      // rain gutters the flame: two incommensurate waves plus the occasional deep dip
+      let fl = 1;
+      if (rain) {
+        const w1 = Math.sin(t * 7.3 + l.ph * 3.1) * Math.sin(t * 2.9 + l.ph);
+        const dip = Math.pow(Math.max(0, Math.sin(t * 1.7 + l.ph * 2.3)), 6);
+        fl = Math.max(0.12, (0.62 + 0.38 * w1) * (1 - 0.6 * dip));
+      }
       const lg = ctx.createRadialGradient(x, y, 2, x, y, l.r * 4.2);
-      lg.addColorStop(0, 'rgba(255,214,150,0.30)'); lg.addColorStop(1, 'rgba(255,214,150,0)');
+      const gc = LANTERN_GLOW[LB_SEASON] || '255,214,150';
+      lg.addColorStop(0, 'rgba(' + gc + ',' + (0.30 * fl).toFixed(3) + ')'); lg.addColorStop(1, 'rgba(' + gc + ',0)');
       ctx.fillStyle = lg; ctx.fillRect(x - l.r * 4.2, y - l.r * 4.2, l.r * 8.4, l.r * 8.4);
+      l.fl = fl;
     }
     ctx.strokeStyle = P('line'); ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(l.fx * W, 0); ctx.lineTo(x, y - l.r); ctx.stroke();
     ctx.fillStyle = '#c3272b';
     ctx.beginPath(); ctx.ellipse(x, y, l.r * 0.72, l.r, 0, 0, 6.29); ctx.fill();
-    ctx.fillStyle = 'rgba(247,242,231,0.9)';
+    ctx.fillStyle = 'rgba(247,242,231,' + (night ? (0.55 + 0.35 * (l.fl == null ? 1 : l.fl)).toFixed(3) : '0.9') + ')';
     ctx.beginPath(); ctx.ellipse(x, y, l.r * 0.34, l.r * 0.88, 0, 0, 6.29); ctx.fill();
     ctx.strokeStyle = P('line2');
     for (const fy of [-0.45, 0, 0.45]) {
@@ -883,7 +1043,7 @@ function drawCoins(dt) {
     ctx.fillRect(x - r * 2.2, y - r * 2.2, r * 4.4, r * 4.4);
     ctx.fillStyle = '#d4af37';
     ctx.beginPath(); ctx.ellipse(x, y, r * 0.82, r, 0, 0, 6.29); ctx.fill();
-    ctx.strokeStyle = '#8a6d1f'; ctx.lineWidth = Math.max(1.5, U(0.04));
+    ctx.strokeStyle = COIN_RIM[LB_SEASON] || '#8a6d1f'; ctx.lineWidth = Math.max(1.5, U(0.04));
     ctx.beginPath(); ctx.ellipse(x, y, r * 0.82, r, 0, 0, 6.29); ctx.stroke();
     ctx.beginPath(); ctx.ellipse(x, y, r * 0.56, r * 0.72, 0, 0, 6.29); ctx.stroke();
     ctx.fillStyle = '#7a5c12';
@@ -925,8 +1085,8 @@ function drawLeaf(l, dt) {
 }
 
 // ---------------- furin (rings on harmony) ----------------
-let furinGlow = 0;
-function drawFurin(t) {
+let furinGlow = 0, furinDrops = [];
+function drawFurin(t, dt) {
   const sway = Math.sin(t * 0.7) * 0.06 + furinGlow * Math.sin(t * 6) * 0.08;
   const bx = W * 0.36, by = 64;
   ctx.strokeStyle = P('line'); ctx.lineWidth = 1;
@@ -948,13 +1108,30 @@ function drawFurin(t) {
   // clapper + tanzaku strip
   ctx.fillStyle = P('ink');
   ctx.beginPath(); ctx.arc(0, 22, 2.4, 0, 6.29); ctx.fill();
-  ctx.fillStyle = night ? '#e8e2d2' : '#f7f2e7';
+  const STRIP = { momiji: '#f7f2e7', sakura: '#f7dfe5', snow: '#eef2f5', firefly: '#eef5d8', rain: '#dfe8ef' };
+  ctx.fillStyle = night ? '#e8e2d2' : (STRIP[LB_SEASON] || '#f7f2e7');
   ctx.strokeStyle = P('line'); ctx.lineWidth = 1;
   ctx.fillRect(-4.5, 24, 9, 26); ctx.strokeRect(-4.5, 24, 9, 26);
   ctx.fillStyle = '#c3272b';
   ctx.font = "9px 'Hiragino Mincho ProN', YuMincho, serif";
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText('\u798F', 0, 38);
+  // rain-night: droplets streak the glass dome
+  if (night && LB_SEASON === 'rain') {
+    if (furinDrops.length < 5 && Math.random() < dt * 1.4) {
+      const dx = (Math.random() - 0.5) * 20;
+      furinDrops.push({ x: dx, y: 10 - Math.sqrt(Math.max(0, 225 - dx * dx)) + 1, v: 5 + Math.random() * 5, a: 0.55 });
+    }
+    ctx.strokeStyle = 'rgba(207,232,239,1)'; ctx.lineWidth = 1;
+    for (let i = furinDrops.length - 1; i >= 0; i--) {
+      const dr = furinDrops[i];
+      dr.y += dr.v * dt; dr.a -= dt * 0.28;
+      if (dr.y >= 9.5 || dr.a <= 0) { furinDrops.splice(i, 1); continue; }
+      ctx.globalAlpha = dr.a;
+      ctx.beginPath(); ctx.moveTo(dr.x, dr.y - 3.2); ctx.lineTo(dr.x, dr.y); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  } else if (furinDrops.length) furinDrops.length = 0;
   ctx.restore();
 }
 
@@ -966,6 +1143,7 @@ function tick(ts) {
   furinGlow = Math.max(0, furinGlow - dt);
   last = ts; T = ts / 1000;
   playbackTick();
+  thunderTick(dt);
   // attract mode: untouched and silent for a while - the cat hums a phrase
   if (AC && !muted && !echo && events.length === 0 && T - lastInteract > 22 && T > humUntil) {
     humUntil = T + 55; lastInteract = T;
@@ -985,10 +1163,11 @@ function tick(ts) {
   ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
   if (!grainPat) grainPat = ctx.createPattern(grain, 'repeat');
   ctx.fillStyle = grainPat; ctx.fillRect(0, 0, W, H);
+  if (skyFlash > 0) { ctx.fillStyle = 'rgba(240,233,216,' + (0.055 * skyFlash).toFixed(3) + ')'; ctx.fillRect(0, 0, W, H * 0.65); }
 
-  drawEnso();
+  drawEnso(T);
   drawLanterns(T);
-  drawFurin(T);
+  drawFurin(T, dt);
 
   // cushion
   ctx.fillStyle = '#a41f23';
@@ -1037,7 +1216,7 @@ function tick(ts) {
 requestAnimationFrame(tick);
 
 // ---------------- debug hooks ----------------
-window.__lb = () => ({ events: events.length, loopOn: loopStart !== null, phase: +loopPhase().toFixed(3), code: events.length ? encodeTune() : null, best, dayN, leavesOn });
+window.__lb = () => ({ events: events.length, loopOn: loopStart !== null, phase: +loopPhase().toFixed(3), code: events.length ? encodeTune() : null, best, dayN, leavesOn, furin: +furinGlow.toFixed(2) });
 window.__lbEcho = () => echo ? { phase: echo.phase, level: echo.level, idx: echo.idx, len: echo.seq.length } : null;
 window.__lbEchoWin = () => { if (echo && echo.phase === 'input') { echo.idx = echo.seq.length - 1; echoTap(echo.seq[echo.seq.length - 1]); } };
 window.__lbTap = sid => { audio(); tap(sid, sid <= 4 ? coinX(coins[sid]) : (sid === 5 ? bellPos().x : cat.x), sid <= 4 ? coinY(coins[sid]) : (sid === 5 ? bellPos().y : cat.y - 200)); };
@@ -1046,6 +1225,38 @@ window.__lbEcho = () => echo ? { phase: echo.phase, idx: echo.idx, level: echo.l
 window.__lbEchoStart = () => echoStart();
 window.__lbCard = () => { const cv = renderShareCard(); window.__lbCardCv = cv; return { w: cv.width, h: cv.height }; };
 window.__lbEchoTap = sid => { if (echo && echo.phase === 'input') { triggerVisual(sid, 1); echoTap(sid); } };
+// distant thunder: a rare roll when the rain layer is live, lightning a breath before the sound
+let skyFlash = 0, thunderNext = 25 + Math.random() * 40, thunderRolls = 0;
+function thunderTick(dt) {
+  skyFlash = Math.max(0, skyFlash - dt * 0.45);
+  if (!rainNodes) return;
+  thunderNext -= dt;
+  if (thunderNext <= 0) { thunderNext = 70 + Math.random() * 80; playThunder(); }
+}
+function playThunder() {
+  if (!AC || muted) return;
+  thunderRolls++; skyFlash = 1;
+  const t0 = AC.currentTime, dur = 3.2;
+  const buf = AC.createBuffer(1, Math.floor(AC.sampleRate * dur), AC.sampleRate);
+  const d = buf.getChannelData(0);
+  let last = 0;
+  for (let i = 0; i < d.length; i++) { const w = Math.random() * 2 - 1; last = last * 0.98 + w * 0.02; d[i] = last * 4; }
+  const delay = 1.2 + Math.random() * 1.6;
+  [0, 0.9].forEach((off, i) => {
+    const s = AC.createBufferSource(); s.buffer = buf;
+    const lp = AC.createBiquadFilter(); lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(320, t0 + delay + off);
+    lp.frequency.exponentialRampToValueAtTime(70, t0 + delay + off + 2.4);
+    const g = AC.createGain();
+    g.gain.setValueAtTime(0.0001, t0 + delay + off);
+    g.gain.exponentialRampToValueAtTime(i ? 0.05 : 0.085, t0 + delay + off + 0.5);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + delay + off + 2.8);
+    s.connect(lp); lp.connect(g); g.connect(master);
+    s.start(t0 + delay + off); s.stop(t0 + delay + off + 3);
+  });
+}
+window.__lbRain = () => ({ want: night && LB_SEASON === 'rain', on: !!rainNodes, gain: rainNodes ? +rainNodes.g.gain.value.toFixed(4) : 0 });
+window.__lbThunder = () => { playThunder(); return { rolls: thunderRolls, flash: skyFlash }; };
 </script>
 </body>
 </html>
