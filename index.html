@@ -192,7 +192,7 @@ if (dayN > 0) {
 }
 
 // ---------------- audio ----------------
-let AC = null, master = null, wet = null, muted = false, rainNodes = null;
+let AC = null, master = null, wet = null, muted = false, rainNodes = null, warmLp = null, wobGain = null;
 function audio() {
   if (AC) return AC;
   AC = new (window.AudioContext || window.webkitAudioContext)();
@@ -200,7 +200,12 @@ function audio() {
   const comp = AC.createDynamicsCompressor();
   comp.threshold.value = -18; comp.knee.value = 22; comp.ratio.value = 8;
   comp.attack.value = 0.004; comp.release.value = 0.24;
-  master.connect(comp); comp.connect(AC.destination);
+  // v49: tape-in-the-rain - warmth filter + slow pitch wobble, both idle unless rain-night
+  warmLp = AC.createBiquadFilter(); warmLp.type = 'lowpass'; warmLp.frequency.value = 19000; warmLp.Q.value = 0.3;
+  master.connect(warmLp); warmLp.connect(comp); comp.connect(AC.destination);
+  const wob = AC.createOscillator(); wob.frequency.value = 4.3;
+  wobGain = AC.createGain(); wobGain.gain.value = 0;
+  wob.connect(wobGain); wob.start();
   const len = Math.floor(AC.sampleRate * 2.1);
   const imp = AC.createBuffer(2, len, AC.sampleRate);
   for (let ch = 0; ch < 2; ch++) {
@@ -210,7 +215,7 @@ function audio() {
   const conv = AC.createConvolver(); conv.buffer = imp;
   wet = AC.createGain(); wet.gain.value = 0.22;
   wet.connect(conv); conv.connect(master);
-  updateRainAudio();
+  updateRainAudio(); updateTapeDrift();
   return AC;
 }
 // rain at night: a soft pink-noise wash, breathing slowly under the bells
@@ -261,6 +266,7 @@ function playCoin(f, when, vol) {
   o2.type = 'triangle'; o2.frequency.value = f * 2.01;
   const g2 = AC.createGain(); g2.gain.value = 0.25;
   o1.connect(g); o2.connect(g2); g2.connect(g);
+  if (wobGain) { wobGain.connect(o1.detune); wobGain.connect(o2.detune); }
   env(g, t0, vol || 0.22, 0.9);
   out(g, 0.8);
   o1.start(t0); o2.start(t0); o1.stop(t0 + 1); o2.stop(t0 + 1);
@@ -313,7 +319,17 @@ let events = [];
 let tapRhythm = [], echoAnswered = true, echoReplayed = 0; // v47: the ground answers your rhythm
 let lastStep = -1;
 // tape drift: over long sessions the loop breathes a little, like a well-loved cassette
-const DRIFT_A1 = 0.012, DRIFT_P1 = 150, DRIFT_A2 = 0.007, DRIFT_P2 = 97, DRIFT_PH2 = 1.3;
+let DRIFT_A1 = 0.012, DRIFT_P1 = 150, DRIFT_A2 = 0.007, DRIFT_P2 = 97;
+const DRIFT_PH2 = 1.3;
+function updateTapeDrift() {
+  const rn = night && LB_SEASON === 'rain';
+  DRIFT_A1 = rn ? 0.02 : 0.012; DRIFT_P1 = rn ? 190 : 150;
+  DRIFT_A2 = rn ? 0.011 : 0.007; DRIFT_P2 = rn ? 131 : 97;
+  if (!AC) return;
+  const t = AC.currentTime;
+  if (warmLp) { warmLp.frequency.cancelScheduledValues(t); warmLp.frequency.setValueAtTime(warmLp.frequency.value, t); warmLp.frequency.linearRampToValueAtTime(rn ? 5200 : 19000, t + 2.2); }
+  if (wobGain) { wobGain.gain.cancelScheduledValues(t); wobGain.gain.setValueAtTime(wobGain.gain.value, t); wobGain.gain.linearRampToValueAtTime(rn ? 7 : 0, t + 2.2); }
+}
 function loopPhase() {
   if (loopStart === null || !AC) return 0;
   const el = AC.currentTime - loopStart;
@@ -455,6 +471,7 @@ function echoTap(sid) {
 }
 document.getElementById('nightBtn').addEventListener('click', () => {
   night = !night;
+  updateTapeDrift();
   try { localStorage.setItem('lb_night', night ? 'on' : 'off'); } catch (e) {}
   applyNight(); genGrain(); grainPat = null;
   updateRainAudio();
@@ -1235,6 +1252,7 @@ requestAnimationFrame(tick);
 
 // ---------------- debug hooks ----------------
 window.__lb = () => ({ events: events.length, loopOn: loopStart !== null, phase: +loopPhase().toFixed(3), code: events.length ? encodeTune() : null, best, dayN, leavesOn, furin: +furinGlow.toFixed(2) });
+window.__lbTape = () => ({ on: night && LB_SEASON === 'rain', wowA: DRIFT_A1, wowP: DRIFT_P1, warmHz: warmLp ? Math.round(warmLp.frequency.value) : 0, wobCents: wobGain ? +wobGain.gain.value.toFixed(1) : 0 });
 window.__lbEchoMem = () => ({ taps: tapRhythm.length, replayed: echoReplayed, rings: ripples.filter(r => r.w).length });
 window.__lbEcho = () => echo ? { phase: echo.phase, level: echo.level, idx: echo.idx, len: echo.seq.length } : null;
 window.__lbEchoWin = () => { if (echo && echo.phase === 'input') { echo.idx = echo.seq.length - 1; echoTap(echo.seq[echo.seq.length - 1]); } };
