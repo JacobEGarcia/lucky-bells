@@ -447,15 +447,22 @@ function echoShow() {
   setTimeout(() => { if (echo && echo.phase === 'show') { echo.phase = 'input'; updateStatus(); } }, 500 + echo.seq.length * gap + 200);
 }
 // the furin answers a solved echo: two glassy partials with a long ring
+// v56: in snow the cold thins the music too - one glass note, longer ring, nothing else
+let lastChimeNotes = 0, chimeTotal = 0;
 function playFurinChime(vol) {
   if (muted || !AC) return;
   const t0 = AC.currentTime;
-  [3120, 4180].forEach((f, i) => {
+  chimeTotal++;
+  const snowy = LB_SEASON === 'snow';
+  const parts = snowy ? [[3120 * 0.97, 0]] : [[3120, 0], [4180, 1]];
+  lastChimeNotes = parts.length;
+  parts.forEach(([f, i]) => {
     const o = AC.createOscillator(), g = AC.createGain();
     o.type = 'sine'; o.frequency.value = f * (0.98 + Math.random() * 0.04);
-    env(g, t0 + i * 0.09, (vol || 1) * (i ? 0.05 : 0.09), 2.2);
+    const dec = snowy ? 3.1 : 2.2;
+    env(g, t0 + i * 0.09, (vol || 1) * (snowy ? 0.1 : (i ? 0.05 : 0.09)), dec);
     o.connect(g); out(g, 0.7);
-    o.start(t0 + i * 0.09); o.stop(t0 + i * 0.09 + 2.4);
+    o.start(t0 + i * 0.09); o.stop(t0 + i * 0.09 + dec + 0.2);
   });
 }
 function echoTap(sid) {
@@ -1354,6 +1361,7 @@ requestAnimationFrame(tick);
 // ---------------- debug hooks ----------------
 window.__lb = () => ({ events: events.length, loopOn: loopStart !== null, phase: +loopPhase().toFixed(3), code: events.length ? encodeTune() : null, best, dayN, leavesOn, furin: +furinGlow.toFixed(2) });
 window.__lbPress = () => pressCount;
+window.__lbChime = () => ({ last: lastChimeNotes, total: chimeTotal });
 window.__lbTape = () => ({ on: night && LB_SEASON === 'rain', ease: +tapeEase.toFixed(3), frost: night && LB_SEASON === 'snow', fease: +frostEase.toFixed(3), wowA: +DRIFT_A1.toFixed(3), wowP: Math.round(DRIFT_P1), warmHz: warmLp ? Math.round(warmLp.frequency.value) : 0, frostDb: frostHs ? +frostHs.gain.value.toFixed(1) : 0, frostHp: frostHp ? Math.round(frostHp.frequency.value) : 0, wobCents: wobGain ? +wobGain.gain.value.toFixed(1) : 0 });
 window.__lbEchoMem = () => ({ taps: tapRhythm.length, replayed: echoReplayed, rings: ripples.filter(r => r.w).length });
 window.__lbEcho = () => echo ? { phase: echo.phase, level: echo.level, idx: echo.idx, len: echo.seq.length } : null;
