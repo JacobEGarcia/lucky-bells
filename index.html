@@ -321,15 +321,17 @@ let lastStep = -1;
 // tape drift: over long sessions the loop breathes a little, like a well-loved cassette
 let DRIFT_A1 = 0.012, DRIFT_P1 = 150, DRIFT_A2 = 0.007, DRIFT_P2 = 97;
 const DRIFT_PH2 = 1.3;
-function updateTapeDrift() {
-  const rn = night && LB_SEASON === 'rain';
-  DRIFT_A1 = rn ? 0.02 : 0.012; DRIFT_P1 = rn ? 190 : 150;
-  DRIFT_A2 = rn ? 0.011 : 0.007; DRIFT_P2 = rn ? 131 : 97;
+// v50: the drift engages in seconds at nightfall but releases over a slow dawn window -
+// the loop wakes up dry gradually, like the shrine pools cooling at first light
+let tapeEase = 0;
+function applyTape(e) {
+  DRIFT_A1 = 0.012 + e * 0.008; DRIFT_P1 = 150 + e * 40;
+  DRIFT_A2 = 0.007 + e * 0.004; DRIFT_P2 = 97 + e * 34;
   if (!AC) return;
-  const t = AC.currentTime;
-  if (warmLp) { warmLp.frequency.cancelScheduledValues(t); warmLp.frequency.setValueAtTime(warmLp.frequency.value, t); warmLp.frequency.linearRampToValueAtTime(rn ? 5200 : 19000, t + 2.2); }
-  if (wobGain) { wobGain.gain.cancelScheduledValues(t); wobGain.gain.setValueAtTime(wobGain.gain.value, t); wobGain.gain.linearRampToValueAtTime(rn ? 7 : 0, t + 2.2); }
+  if (warmLp) warmLp.frequency.value = 19000 - e * 13800;
+  if (wobGain) wobGain.gain.value = e * 7;
 }
+function updateTapeDrift() { tapeEase = (night && LB_SEASON === 'rain') ? 1 : 0; applyTape(tapeEase); }
 function loopPhase() {
   if (loopStart === null || !AC) return 0;
   const el = AC.currentTime - loopStart;
@@ -471,7 +473,6 @@ function echoTap(sid) {
 }
 document.getElementById('nightBtn').addEventListener('click', () => {
   night = !night;
-  updateTapeDrift();
   try { localStorage.setItem('lb_night', night ? 'on' : 'off'); } catch (e) {}
   applyNight(); genGrain(); grainPat = null;
   updateRainAudio();
@@ -1165,6 +1166,11 @@ function tick(ts) {
   last = ts; T = ts / 1000;
   playbackTick();
   thunderTick(dt);
+  const tapeTarget = (night && LB_SEASON === 'rain') ? 1 : 0;
+  if (tapeEase !== tapeTarget) {
+    tapeEase += Math.sign(tapeTarget - tapeEase) * Math.min(Math.abs(tapeTarget - tapeEase), tapeTarget > tapeEase ? dt / 2.2 : dt / 90);
+    applyTape(tapeEase);
+  }
   // v47: after a quiet breath, pale rings on the ground replay the rhythm you rang
   if (!echoAnswered && tapRhythm.length >= 3 && T - tapRhythm[tapRhythm.length - 1] > 4) {
     echoAnswered = true; echoReplayed++;
@@ -1252,7 +1258,7 @@ requestAnimationFrame(tick);
 
 // ---------------- debug hooks ----------------
 window.__lb = () => ({ events: events.length, loopOn: loopStart !== null, phase: +loopPhase().toFixed(3), code: events.length ? encodeTune() : null, best, dayN, leavesOn, furin: +furinGlow.toFixed(2) });
-window.__lbTape = () => ({ on: night && LB_SEASON === 'rain', wowA: DRIFT_A1, wowP: DRIFT_P1, warmHz: warmLp ? Math.round(warmLp.frequency.value) : 0, wobCents: wobGain ? +wobGain.gain.value.toFixed(1) : 0 });
+window.__lbTape = () => ({ on: night && LB_SEASON === 'rain', ease: +tapeEase.toFixed(3), wowA: +DRIFT_A1.toFixed(3), wowP: Math.round(DRIFT_P1), warmHz: warmLp ? Math.round(warmLp.frequency.value) : 0, wobCents: wobGain ? +wobGain.gain.value.toFixed(1) : 0 });
 window.__lbEchoMem = () => ({ taps: tapRhythm.length, replayed: echoReplayed, rings: ripples.filter(r => r.w).length });
 window.__lbEcho = () => echo ? { phase: echo.phase, level: echo.level, idx: echo.idx, len: echo.seq.length } : null;
 window.__lbEchoWin = () => { if (echo && echo.phase === 'input') { echo.idx = echo.seq.length - 1; echoTap(echo.seq[echo.seq.length - 1]); } };
