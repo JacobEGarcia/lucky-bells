@@ -273,6 +273,30 @@ function playCoin(f, when, vol) {
   out(g, 0.8);
   o1.start(t0); o2.start(t0); o1.stop(t0 + 1); o2.stop(t0 + 1);
 }
+// v54: in snow season the card is stamped, and you hear the stamp - a soft press
+let pressCount = 0;
+function playPress() {
+  if (!AC) return;
+  pressCount++;
+  const t0 = AC.currentTime;
+  // the stone meeting paper: low soft thud settling down
+  const o = AC.createOscillator(), g = AC.createGain();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(150, t0);
+  o.frequency.exponentialRampToValueAtTime(70, t0 + 0.09);
+  env(g, t0, 0.16, 0.16);
+  out(g, 0.3);
+  o.start(t0); o.stop(t0 + 0.25);
+  // the paper grain taking the ink: one dry tick, just after contact
+  const nb = AC.createBuffer(1, 2205, AC.sampleRate);
+  const dd = nb.getChannelData(0);
+  for (let i = 0; i < dd.length; i++) dd[i] = (Math.random() * 2 - 1) * (1 - i / dd.length);
+  const src = AC.createBufferSource(); src.buffer = nb;
+  const bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2400; bp.Q.value = 0.8;
+  const ng = AC.createGain(); env(ng, t0 + 0.012, 0.05, 0.07);
+  src.connect(bp); bp.connect(ng); ng.connect(master);
+  src.start(t0 + 0.012);
+}
 function playBell(when, vol) {
   if (!AC) return;
   const t0 = when || AC.currentTime;
@@ -774,6 +798,7 @@ function renderShareCard() {
 
 function shareTune() {
   const url = location.origin + location.pathname + '#t=' + encodeTune();
+  if (LB_SEASON === 'snow') { audio(); playPress(); } // v54: hear the hanko land
   const caption = (tuneName ? tuneName + ' - ' : '') + 'my lucky tune: ' + url;
   let cv = null;
   try { cv = renderShareCard(); } catch (e) {}
@@ -1319,6 +1344,7 @@ requestAnimationFrame(tick);
 
 // ---------------- debug hooks ----------------
 window.__lb = () => ({ events: events.length, loopOn: loopStart !== null, phase: +loopPhase().toFixed(3), code: events.length ? encodeTune() : null, best, dayN, leavesOn, furin: +furinGlow.toFixed(2) });
+window.__lbPress = () => pressCount;
 window.__lbTape = () => ({ on: night && LB_SEASON === 'rain', ease: +tapeEase.toFixed(3), frost: night && LB_SEASON === 'snow', fease: +frostEase.toFixed(3), wowA: +DRIFT_A1.toFixed(3), wowP: Math.round(DRIFT_P1), warmHz: warmLp ? Math.round(warmLp.frequency.value) : 0, frostDb: frostHs ? +frostHs.gain.value.toFixed(1) : 0, frostHp: frostHp ? Math.round(frostHp.frequency.value) : 0, wobCents: wobGain ? +wobGain.gain.value.toFixed(1) : 0 });
 window.__lbEchoMem = () => ({ taps: tapRhythm.length, replayed: echoReplayed, rings: ripples.filter(r => r.w).length });
 window.__lbEcho = () => echo ? { phase: echo.phase, level: echo.level, idx: echo.idx, len: echo.seq.length } : null;
